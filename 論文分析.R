@@ -26,14 +26,28 @@ theme_set(theme_bw()+ theme(text = element_text(size=20,family = "BL"),legend.po
 rat.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(rat=n())%>%#先計算各樣點老鼠隻數
   complete(month, fill = list(rat = 0))%>%group_by(habitat_type,month)%>%
   summarise(mean=mean(rat),se=sd(rat)/sqrt(n()))#再計算各棲地mean與se
+
 mass.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(mass=mean(weight.g.))%>%
   group_by(habitat_type,month)%>%summarise(mean=mean(mass),se=sd(mass)/sqrt(n()))
+
 chigger.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(chigger=mean(chigger))%>%
   complete(month, fill = list(chigger = 0))%>%group_by(habitat_type,month)%>%
   summarise(mean=mean(chigger),se=sd(chigger)/sqrt(n()))
+
+total.chigger<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(chigger))%>%
+  complete(month, fill = list(chigger = NULL))
+total.chigger[is.na(total.chigger)==T]<-0
+ctotal.mean<-total.chigger%>%group_by(habitat_type,month)%>%
+  summarise(mean=mean(total),se=sd(total)/sqrt(n()))
+
 tick.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(tick.total=mean(tick.total))%>%
   complete(month, fill = list(tick.total = 0))%>%group_by(habitat_type,month)%>%
   summarise(mean=mean(tick.total),se=sd(tick.total)/sqrt(n()))
+total.tick<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(tick.total))%>%
+  complete(month, fill = list(tick.total = NULL))
+total.tick[is.na(total.tick)==T]<-0
+ttotal.mean<-total.tick%>%group_by(habitat_type,month)%>%summarise(mean=mean(total),se=sd(total)/sqrt(n()))
+
 #附錄一####
 mas.location<-ly%>%group_by(location,month)%>%summarise(mean=mean(weight.g.),se=sd(weight.g.)/sqrt(n()))%>%
   complete(month,fill=list(mean=0,se=0))
@@ -61,12 +75,15 @@ lsmeans(ratgee,pairwise ~ habitat_type,adjust = "tukey")#機地間都有差異
 lsmeans(ratgee,pairwise ~ month,adjust = "tukey")#12月高於其他
 lsmeans(ratgee,pairwise ~ habitat_type:month,adjust = "tukey")
 
+library(Rmisc)#與dplyr衝突
+rat.ci<- summarySE(rat, measurevar="rat", groupvars=c("habitat_type","month"))#計算信賴區間CI
 ggsave(filename = "圖三.png",#圖三####
-       ggplot(rat)+aes(month,rat,fill=month)+geom_boxplot()+
+       ggplot(rat.ci)+aes(month,rat,fill=month)+geom_bar(stat = "identity",width=.8,col=1)+
+         geom_errorbar(aes(ymin=rat-se, ymax=rat+se),width=.4)+
          scale_fill_grey(start = 1, end = 0.4)+facet_grid(.~habitat_type)+
-         scale_y_continuous(expand = c(0, 0),limits = c(0,22))+xlab("捕捉月份")+ylab("家鼠數量"),
+         facet_grid(.~habitat_type)+scale_y_continuous(expand = c(0, 0),limits = c(0,19))+
+         xlab("捕捉月份")+ylab("家鼠數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
-
 
 #老鼠體型分析####
 shapiro.test(ly$weight.g.^2)
@@ -173,10 +190,12 @@ totalGLMM<-glmer.nb(total~habitat_type*month+(1|block/location),data = total)#GL
 Anova(totalGLMM,type = 3)#有交互
 lsmeans(totalGLMM,pairwise ~ habitat_type:month,adjust = "tukey")
 
+chigger.ci<- summarySE(total, measurevar="total", groupvars=c("habitat_type","month"))#計算信賴區間CI
 ggsave(filename = "圖九.png",#圖九####
-       ggplot(total)+aes(month,total,fill=month)+geom_boxplot()+
+       ggplot(chigger.ci)+aes(month,total,fill= month)+geom_bar(stat = "identity",width = .8,col=1)+
+         geom_errorbar(aes(ymin=total-se, ymax=total+se),width=.4)+
          scale_fill_grey(start = 1, end = 0.4,name="捕捉月份")+facet_grid(.~habitat_type)+
-         scale_y_continuous(expand = c(0, 0),limits = c(0,9000))+xlab("棲地類型")+ylab("恙蟎總數量"),
+         scale_y_continuous(expand = c(0, 0),limits = c(0,7500))+xlab("棲地類型")+ylab("恙蟎總數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 
 #恙蟲病鑑定結果####
@@ -271,10 +290,12 @@ total.tick.glmm<-glmer.nb(total~habitat_type*month+(1|location),data=total.tick,
 Anova(total.tick.glmm,type = 3)#無交互作用
 lsmeans(total.tick.glmm,pairwise ~ habitat_type,adjust = "tukey")#草地>部落
 
+tick.ci<- summarySE(total.tick, measurevar="total", groupvars=c("habitat_type","month"))
 ggsave(filename = "圖十六.png",#圖十六####
-       ggplot(total.tick)+aes(month,total,fill=month)+geom_boxplot()+
+       ggplot(tick.ci)+aes(month,total,fill=month)+geom_bar(stat = "identity",width = .8,col=1)+
+         geom_errorbar(aes(ymin=total-se, ymax=total+se),width=.4)+
          scale_fill_grey(start = 1, end = 0.4,name="捕捉月份")+facet_grid(.~habitat_type)+
-         scale_y_continuous(expand = c(0, 0),limits = c(0,320))+xlab("棲地類型")+ylab("硬蜱總數量"),
+         scale_y_continuous(expand = c(0, 0),limits = c(0,190))+xlab("棲地類型")+ylab("硬蜱總數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 
 #硬蜱生活史階段####
