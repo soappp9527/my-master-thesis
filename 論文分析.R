@@ -22,7 +22,15 @@ library(geepack)
 windowsFonts(BL = windowsFont("標楷體"))#設定字形
 theme_set(theme_bw()+ theme(text = element_text(size=20,family = "BL"),legend.position="none"))#作圖設定
 
-#表一###
+#鑑定結果整理匯入####
+cc<-read.csv("恙螨鑑定紀錄.csv",stringsAsFactors=FALSE)#讀取資料
+cc1<-cc%>%group_by(NO.)%>%#將玻片計數資料處理成個體資料
+  summarise(total=sum(total),L.deliense=sum(L.deliense),W.xishaensis=sum(W.xishaensis),
+            E.wichmanni=sum(E.wichmanni),NA.=sum(NA.))
+ly<-left_join(ly,cc1)
+ly[is.na(ly)]<-0
+
+#表一####
 rat.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(rat=n())%>%#先計算各樣點老鼠隻數
   complete(month, fill = list(rat = 0))%>%group_by(habitat_type,month)%>%
   summarise(mean=mean(rat),se=sd(rat)/sqrt(n()))#再計算各棲地mean與se
@@ -37,8 +45,7 @@ chigger.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(chigger=mea
 total.chigger<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(chigger))%>%
   complete(month, fill = list(chigger = NULL))
 total.chigger[is.na(total.chigger)==T]<-0
-ctotal.mean<-total.chigger%>%group_by(habitat_type,month)%>%
-  summarise(mean=mean(total),se=sd(total)/sqrt(n()))
+ctotal.mean<-total.chigger%>%group_by(habitat_type,month)%>%summarise(mean=mean(total),se=sd(total)/sqrt(n()))
 
 tick.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(tick.total=mean(tick.total))%>%
   complete(month, fill = list(tick.total = 0))%>%group_by(habitat_type,month)%>%
@@ -75,14 +82,14 @@ lsmeans(ratgee,pairwise ~ habitat_type,adjust = "tukey")#機地間都有差異
 lsmeans(ratgee,pairwise ~ month,adjust = "tukey")#12月高於其他
 lsmeans(ratgee,pairwise ~ habitat_type:month,adjust = "tukey")
 
-library(Rmisc)#與dplyr衝突
-rat.ci<- summarySE(rat, measurevar="rat", groupvars=c("habitat_type","month"))#計算信賴區間CI
+rat.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(rat=n())%>%#先計算各樣點老鼠隻數
+  complete(month, fill = list(rat = 0))%>%group_by(habitat_type,month)%>%
+  summarise(mean=mean(rat),se=sd(rat)/sqrt(n()))#再計算各棲地mean與se
 ggsave(filename = "圖三.png",#圖三####
-       ggplot(rat.ci)+aes(month,rat,fill=month)+geom_bar(stat = "identity",width=.8,col=1)+
-         geom_errorbar(aes(ymin=rat-se, ymax=rat+se),width=.4)+
+       ggplot(rat.mean)+aes(month,mean,fill=month)+geom_bar(stat = "identity",width=.8,col=1)+
+         geom_errorbar(aes(ymin=mean-se+0.0001, ymax=mean+se),width=.4)+
          scale_fill_grey(start = 1, end = 0.4)+facet_grid(.~habitat_type)+
-         facet_grid(.~habitat_type)+scale_y_continuous(expand = c(0, 0),limits = c(0,19))+
-         xlab("捕捉月份")+ylab("家鼠數量"),
+         scale_y_continuous(expand = c(0, 0),limits = c(0,19))+xlab("捕捉月份")+ylab("家鼠數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 
 #老鼠體型分析####
@@ -123,13 +130,6 @@ ggsave(filename = "圖四.png",#圖四####
          scale_y_continuous(expand = c(0, 0))+xlab("捕捉月份")+ylab("性成熟比例"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 
-#鑑定結果整理匯入####
-cc<-read.csv("恙螨鑑定紀錄.csv",stringsAsFactors=FALSE)#讀取資料
-cc1<-cc%>%group_by(NO.)%>%#將玻片計數資料處理成個體資料
-  summarise(total=sum(total),L.deliense=sum(L.deliense),W.xishaensis=sum(W.xishaensis),
-            E.wichmanni=sum(E.wichmanni),NA.=sum(NA.))
-ly<-left_join(ly,cc1)
-ly[is.na(ly)]<-0
 #恙蟎物種分析####
 ggsave(filename = "圖五.png",#圖五####
        ggplot(ly)+aes(location,L.deliense,fill=month)+geom_bar(stat="identity")+
@@ -180,20 +180,17 @@ ggsave(filename = "圖八.png",#圖八####
          width = 20, height = 14, dpi = 300, units = "cm", device='png')
 
 #恙蟲總量分析####
-rat<-ly%>%group_by(habitat_type,location,block,month)%>%summarise(rat=n())%>%
-  complete(month, fill = list(rat = 0))#計算各樣點老鼠隻數
-chigger<-ly%>%group_by(habitat_type,location,block,month)%>%#計算各樣點恙蟲平均豐度
-    summarise(chigger=mean(chigger,na.rm=TRUE))%>%complete(month, fill = list(chigger = 0))
-total<-left_join(chigger,rat)#合併
-total$total<-total$chigger*total$rat#計算恙蟲總量
-totalGLMM<-glmer.nb(total~habitat_type*month+(1|block/location),data = total)#GLMM
+total.chigger<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(chigger))%>%
+  complete(month, fill = list(chigger = NULL))
+total.chigger[is.na(total.chigger)==T]<-0
+totalGLMM<-glmer.nb(total~habitat_type*month+(1|block/location),data = total.chigger)#GLMM
 Anova(totalGLMM,type = 3)#有交互
 lsmeans(totalGLMM,pairwise ~ habitat_type:month,adjust = "tukey")
 
-chigger.ci<- summarySE(total, measurevar="total", groupvars=c("habitat_type","month"))#計算信賴區間CI
+ctotal.mean<-total.chigger%>%group_by(habitat_type,month)%>%summarise(mean=mean(total),se=sd(total)/sqrt(n()))
 ggsave(filename = "圖九.png",#圖九####
-       ggplot(chigger.ci)+aes(month,total,fill= month)+geom_bar(stat = "identity",width = .8,col=1)+
-         geom_errorbar(aes(ymin=total-se, ymax=total+se),width=.4)+
+       ggplot(ctotal.mean)+aes(month,mean,fill= month)+geom_bar(stat = "identity",width = .8,col=1)+
+         geom_errorbar(aes(ymin=mean-se, ymax=mean+se),width=.4)+
          scale_fill_grey(start = 1, end = 0.4,name="捕捉月份")+facet_grid(.~habitat_type)+
          scale_y_continuous(expand = c(0, 0),limits = c(0,7500))+xlab("棲地類型")+ylab("恙蟎總數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
@@ -280,20 +277,17 @@ ggsave(filename = "圖十五.png",#圖十五####
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 
 #硬蜱總量####
-rat<-ly%>%group_by(habitat_type,location,month)%>%summarise(rat=n())%>%
-  complete(month, fill = list(rat = 0))#計算各樣點老鼠隻數
-tick<-ly%>%group_by(habitat_type,location,month)%>%#計算各樣點硬蜱平均豐度
-  summarise(tick=mean(tick.total,na.rm=TRUE))%>%complete(month, fill = list(tick = 0))
-total.tick<-left_join(tick,rat)#合併
-total.tick$total<-total.tick$tick*total.tick$rat#計算硬蜱總量
+total.tick<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(tick.total))%>%
+  complete(month, fill = list(tick.total = NULL))
+total.tick[is.na(total.tick)==T]<-0
 total.tick.glmm<-glmer.nb(total~habitat_type*month+(1|location),data=total.tick,verbose=FALSE)
 Anova(total.tick.glmm,type = 3)#無交互作用
 lsmeans(total.tick.glmm,pairwise ~ habitat_type,adjust = "tukey")#草地>部落
 
-tick.ci<- summarySE(total.tick, measurevar="total", groupvars=c("habitat_type","month"))
+ttotal.mean<-total.tick%>%group_by(habitat_type,month)%>%summarise(mean=mean(total),se=sd(total)/sqrt(n()))
 ggsave(filename = "圖十六.png",#圖十六####
-       ggplot(tick.ci)+aes(month,total,fill=month)+geom_bar(stat = "identity",width = .8,col=1)+
-         geom_errorbar(aes(ymin=total-se, ymax=total+se),width=.4)+
+       ggplot(ttotal.mean)+aes(month,mean,fill=month)+geom_bar(stat = "identity",width = .8,col=1)+
+         geom_errorbar(aes(ymin=mean-se, ymax=mean+se),width=.4)+
          scale_fill_grey(start = 1, end = 0.4,name="捕捉月份")+facet_grid(.~habitat_type)+
          scale_y_continuous(expand = c(0, 0),limits = c(0,190))+xlab("棲地類型")+ylab("硬蜱總數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
