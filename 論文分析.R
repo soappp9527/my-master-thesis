@@ -17,8 +17,8 @@ library(reshape2)
 library(lme4)#GLMM
 library(car)#ANOVA
 library(emmeans)#post hoc
-library(glmmTMB)#GLMMZINB
 library(geepack)
+library(glmmTMB)#GLMMZINB
 windowsFonts(BL = windowsFont("標楷體"))#設定字形
 theme_set(theme_bw()+ theme(text = element_text(size=20,family = "BL"),legend.position="none"))#作圖設定
 
@@ -69,14 +69,14 @@ chisq.test(tra)
 rat<-ly%>%group_by(habitat_type,location,month)%>%summarise(rat=n())%>%
   complete(month, fill = list(rat = 0))#計算各樣點老鼠隻數
 #GLMM
-ratLMM<-lmer(rat~habitat_type*month+(1|location),data = rat)
+ratLMM<-lmer(rat~habitat_type*month+(1+month|location),data = rat)
 Anova(ratLMM,type = 3)#無交互
 ratLMM<-lmer(rat~habitat_type+month+(1|location),data = rat)
 Anova(ratLMM,type = 3)#月份間、棲地間都有差異
 lsmeans(ratLMM,pairwise ~ habitat_type,adjust = "tukey")#部落低於森林
 lsmeans(ratLMM,pairwise ~ month,adjust = "tukey")#12月高於3月6月
 #GEE
-ratgee<-geeglm(rat~habitat_type*month,id=location,data=na.omit(rat),family = gaussian,corstr  = "ar1")
+ratgee<-geeglm(rat~habitat_type+month,id=location,data= rat,std.err="fij",family = gaussian,corstr  = "ar1")
 anova(ratgee)#有交互
 lsmeans(ratgee,pairwise ~ habitat_type,adjust = "tukey")#機地間都有差異
 lsmeans(ratgee,pairwise ~ month,adjust = "tukey")#12月高於其他
@@ -96,13 +96,13 @@ ggsave(filename = "圖三.png",#圖三####
 shapiro.test(ly$weight.g.^2)
 ggplot(ly)+aes(weight.g.^2)+geom_density()
 #GLMM
-rat.massLMM<-lmer(weight.g.^2~habitat_type*month*reproduction+(1|location),data =ly)#LMM
+rat.massLMM<-lmer(weight.g.~habitat_type*month+(1|location),data =ly)#LMM
 Anova(rat.massLMM,type=3)#無棲地月份交互
-rat.massLMM<-lmer(weight.g.^2~habitat_type+month*reproduction+(1|location),data =ly)#LMM
+rat.massLMM<-lmer(weight.g.^2~habitat_type+month+(1|location),data =ly)#LMM
 Anova(rat.massLMM,type=3)#生殖狀態月份交互
 lsmeans(rat.massLMM,pairwise ~ reproduction:month,adjust = "tukey")#6月未成熟體型小於其他月份
 #GEE
-rat.massgee<-geeglm(weight.g.~habitat_type+month*reproduction,id=location,data=ly,
+rat.massgee<-geeglm(weight.g.~habitat_type*month,id=location,data=ly,
                     family = gaussian,corstr  = "ar1")
 anova(rat.massgee)#生殖與月份交互
 lsmeans(rat.massgee,pairwise ~ reproduction:month,adjust = "tukey")#6月未成熟體型小於其他月份
@@ -115,11 +115,16 @@ ggplot(ly)+geom_boxplot(aes(month,weight.g.))+
   scale_y_continuous(expand = c(0, 0))+xlab("捕捉月份")+ylab("家鼠體重")
   
 #老鼠性成熟比例分析####
-ratrLMM<-glmer(as.numeric(reproduction)~habitat_type*month+(1|location),data =ly,family=binomial)
+ly1<-ly
+ly1[ly1$reproduction=="性成熟",]$reproduction<-1
+ly1[ly1$reproduction=="未成熟",]$reproduction<-0
+ly1[ly1$sex=="M",]$sex<-1
+ly1[ly1$sex=="F",]$sex<-0
+ratrLMM<-glmer(as.numeric(reproduction)~habitat_type*month+(1|location),data =ly1,family=binomial)
 Anova(ratrLMM,type = 3)#有交互
 lsmeans(ratrLMM,pairwise ~ habitat_type:month,adjust = "tukey")#森林中6月性成熟比例高於12月
 #6月為主要繁殖季
-ratrgee<-geeglm(as.numeric(reproduction)~habitat_type*month,id=location,data =ly,family=binomial,corstr ="ar1")
+ratrgee<-geeglm(as.numeric(reproduction)~habitat_type*month,id=location,data =ly1,family=binomial,corstr ="ar1")
 anova(ratrgee)
 lsmeans(ratrgee,pairwise ~ habitat_type:month,adjust = "tukey")
 
@@ -159,7 +164,7 @@ ggsave(filename = "圖七.png",#圖七####
 
 #恙蟲豐度分析####
 #GLMM
-chigger.glmm<-glmer.nb(chigger~habitat_type*month+sex+(1|block/location),data=ly,verbose=FALSE)#GLMM
+chigger.glmm<-glmer.nb(chigger~habitat_type*month+weight.g.+(1|location),data=ly,verbose=FALSE)#GLMM
 Anova(chigger.glmm,type=3)#有交互
 lsmeans(chigger.glmm,pairwise ~ habitat_type:month,adjust = "tukey")#森林6>9>3=12
 lsmeans(chigger.glmm,pairwise ~ reproduction,adjust = "tukey")#性成熟>未成熟
@@ -169,7 +174,9 @@ chi.lm<-lm(ly$chi.resi~ly$weight.g.)
 summary(chi.lm)
 ggplot(ly)+aes(weight.g.,chiresi)+geom_point()+geom_smooth(method = "lm")
 #GEE
-cgee<-geeglm(chigger~habitat_type*month+weight.g.,id=location,data=ly,family=poisson,corstr = "ar1")
+chigger.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(chigger=mean(chigger))%>%
+  complete(month, fill = list(chigger = 0))
+cgee<-geeglm(chigger~habitat_type*month,id=location,data=chigger.mean,std.err="fij",family=poisson,corstr = "ar1")
 anova(cgee)#有交互
 lsmeans(cgee,pairwise ~ habitat_type:month,adjust = "tukey")
 
@@ -183,9 +190,15 @@ ggsave(filename = "圖八.png",#圖八####
 total.chigger<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(chigger))%>%
   complete(month, fill = list(chigger = NULL))
 total.chigger[is.na(total.chigger)==T]<-0
+tcLMM<-lmer(total~habitat_type*month+(1|location),data = total.chigger)
 totalGLMM<-glmer.nb(total~habitat_type*month+(1|block/location),data = total.chigger)#GLMM
 Anova(totalGLMM,type = 3)#有交互
 lsmeans(totalGLMM,pairwise ~ habitat_type:month,adjust = "tukey")
+
+ctgee<-geeglm(total~habitat_type*month,id=location,data=total.chigger,#std.err="fij",
+              family=poisson,corstr = "ar1")
+anova(ctgee)
+lsmeans(ctgee,pairwise ~ habitat_type:month,adjust = "tukey")
 
 ctotal.mean<-total.chigger%>%group_by(habitat_type,month)%>%summarise(mean=mean(total),se=sd(total)/sqrt(n()))
 ggsave(filename = "圖九.png",#圖九####
@@ -215,21 +228,21 @@ ggsave(filename = "圖十一.png",#圖十一####
        ggplot(ly)+aes(location,I.g.total,fill=month)+geom_bar(stat="identity")+
          scale_fill_grey(start = 0.8, end = 0.2,name="捕捉月份")+
          theme(axis.text.x = element_text(angle = 45, hjust = 1),legend.position = "bottom")+
-         scale_y_continuous(expand = c(0, 0),limits = c(0,450))+xlab("捕捉樣點")+ylab("粒形硬蜱"),
+         scale_y_continuous(expand = c(0, 0),limits = c(0,450))+xlab("捕捉樣點")+ylab("粒形硬蜱數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 allat<-ly%>%group_by(month,location)%>%summarise(alltick=sum(A.t.total))
 ggsave(filename = "圖十二.png",#圖十二####
        ggplot(ly)+aes(location,A.t.total,fill=month)+geom_bar(stat="identity")+
          scale_fill_grey(start = 0.8, end = 0.2,name="捕捉月份")+
          theme(axis.text.x = element_text(angle = 45, hjust = 1),legend.position = "bottom")+
-         scale_y_continuous(expand = c(0, 0),limits = c(0,180))+xlab("捕捉樣點")+ylab("龜形花蜱"),
+         scale_y_continuous(expand = c(0, 0),limits = c(0,180))+xlab("捕捉樣點")+ylab("花蜱數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 allhh<-ly%>%group_by(month,location)%>%summarise(alltick=sum(H.h.total))
 ggsave(filename = "圖十三.png",#圖十三####
        ggplot(ly)+aes(location,H.h.total,fill=month)+geom_bar(stat="identity")+
          scale_fill_grey(start = 0.8, end = 0.2,name="捕捉月份")+
          theme(axis.text.x = element_text(angle = 45, hjust = 1),legend.position = "bottom")+
-         scale_y_continuous(expand = c(0, 0),limits = c(0,21))+xlab("捕捉樣點")+ylab("豪豬血蜱"),
+         scale_y_continuous(expand = c(0, 0),limits = c(0,21))+xlab("捕捉樣點")+ylab("血蜱數量"),
        width = 20, height = 14, dpi = 300, units = "cm", device='png')
 ggplot(ly)+aes(month,I.g.larva)+geom_bar(stat="identity")
 
@@ -259,11 +272,18 @@ ggsave(filename = "圖十四.png",#圖十四####
 tick.glmmzinb<-glmmTMB(tick.total~habitat_type+month+sex+(1|location),zi=~habitat_type+month+weight.g.,
                    family=nbinom2,data=ly)#GLMMZINB
 summary(tick.glmm)
-tick.glmm<-glmer.nb(tick.total~habitat_type+month+sex+(1|location),data=ly,verbose=FALSE)
+tick.glmm<-glmer.nb(tick.total~habitat_type+month+sex+(1+month|location),data=ly,verbose=FALSE)
 Anova(tick.glmm,type = 3)#無交互
 lsmeans(tick.glmm,pairwise ~ habitat_type,adjust = "tukey")#草地>部落
 lsmeans(tick.glmm,pairwise ~ month,adjust = "tukey")#12月<all
 lsmeans(tick.glmm,pairwise ~ reproduction,adjust = "tukey")
+
+tick.mean<-ly%>%group_by(habitat_type,location,month)%>%summarise(tick.total=mean(tick.total))%>%
+  complete(month, fill = list(tick.total = 0))
+tgee<-geeglm(tick.total~habitat_type*month,id=location,data=tick.mean,std.err="fij",
+              family=poisson,corstr = "ar1")
+anova(tgee)
+
 #residual
 ly$tick.resi<-residuals(tick.glmm)
 tick.lm<-lm(ly$tick.resi~ly$weight.g.)
@@ -280,9 +300,17 @@ ggsave(filename = "圖十五.png",#圖十五####
 total.tick<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(tick.total))%>%
   complete(month, fill = list(tick.total = NULL))
 total.tick[is.na(total.tick)==T]<-0
-total.tick.glmm<-glmer.nb(total~habitat_type*month+(1|location),data=total.tick,verbose=FALSE)
+total.tick.glmm<-glmer.nb(total~habitat_type*month+(month|location),data=total.tick,verbose=FALSE)
 Anova(total.tick.glmm,type = 3)#無交互作用
 lsmeans(total.tick.glmm,pairwise ~ habitat_type,adjust = "tukey")#草地>部落
+
+total.tick<-ly%>%group_by(habitat_type,location,month)%>%summarise(total=sum(tick.total))%>%
+  complete(month, fill = list(tick.total = NULL))
+total.tick[is.na(total.tick)==T]<-0.0001
+ttgee<-geeglm(total~habitat_type*month,id=location,data=total.tick,
+              family=poisson,corstr = "ar1")
+anova(ttgee)
+lsmeans(ttgee,pairwise ~ habitat_type:month,adjust = "tukey")
 
 ttotal.mean<-total.tick%>%group_by(habitat_type,month)%>%summarise(mean=mean(total),se=sd(total)/sqrt(n()))
 ggsave(filename = "圖十六.png",#圖十六####
@@ -339,3 +367,18 @@ i.g.stage<-tick.stage%>%group_by(stage,month)%>%summarise(an=sum(value))%>%
 ggplot(i.g.stage)+geom_bar(aes(x="",y=an,fill=month),width=1,stat = "identity",position = "fill")+
   coord_polar("y",start = 0)+facet_grid(.~stage)+theme_void()+ scale_y_reverse()+
   geom_text(aes(x=1.1,y=label_pos,label=perc_text))
+#溫溼度圖####
+tep<-read.csv("蘭嶼氣象.csv",stringsAsFactors=FALSE)
+tep$month<-factor(tep$month,levels = c("2017/7","2017/8","2017/9","2017/10","2017/11","2017/12",
+                                       "2018/1","2018/2","2018/3","2018/4","2018/5","2018/6"))
+ggsave(filename = "圖二十二.png",#圖二十二####
+       ggplot(tep,aes(x=month))+geom_bar(aes(y=rain*30/100),stat = "identity",alpha=0.6)+
+         geom_line(aes(y=mean,group = 1),size=1.4)+
+         theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+         scale_fill_grey()+xlab("月份")+
+         scale_y_continuous(expand = c(0, 0),limits = c(0,30),breaks = c(0,5,10,15,20,25,30),
+                            name="平均溫度 ("~degree~"C)",sec.axis = sec_axis(~.*100/30,
+                                                                          breaks = c(0,20,40,60,80,100),
+                                                                          name = "相對溼度(%)")),
+       width = 20, height = 14, dpi = 300, units = "cm", device='png')
+    
